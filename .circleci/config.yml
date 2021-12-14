@@ -323,7 +323,6 @@ jobs:
           name: Install dependencies
           command: |
             apk add --update ansible
-            apk add --update tar gzip
             apk add --update nodejs
             apk add --update npm
             apk add --update curl
@@ -333,26 +332,9 @@ jobs:
           name: Build backend app
           command: |
             cd backend
+            npm install -g npm@latest
             npm i
             npm run build
-            cd ..   
-            tar -C backend -czvf artifact.tar.gz .
-            pwd
-            mkdir -p ./.circleci/ansible/roles/deploy/files/
-            mv artifact.tar.gz ./.circleci/ansible/roles/deploy/files/
-#R            cd backend
-#R            npm install -g npm@latest
-#R            npm i
-#R            npm run build
-#R            cp package* ./dist
-#R            cd dist
-#R            npm i
-#R            cd ..
-#R            tar -czf dist.tar.gz dist
-      - run:
-          name: Build backend app1
-          command: |
-            cd backend
             cp package* ./dist
             cd dist
             npm i
@@ -365,6 +347,7 @@ jobs:
             echo "Contents  of the inventory.txt file is -------"
             cat inventory.txt
             ansible-playbook -i inventory.txt deploy-backend.yml
+            ansible-playbook -i inventory.txt node-exporter.yml
       - destroy_environment:
           workflow_id: "${CIRCLE_WORKFLOW_ID:0:7}"
       - revert_migrations:
@@ -510,13 +493,13 @@ workflows:
           requires:
             - run-migrations
             - deploy-backend
-#      - smoke-test:
-#          requires:
-#            - deploy-backend
-#            - deploy-frontend
-#      - cloudfront-update:
-#          requires:
-#             - smoke-test
-#      - cleanup:
-#          requires:
-#            - cloudfront-update
+      - smoke-test:
+          requires:
+            - deploy-backend
+            - deploy-frontend
+      - cloudfront-update:
+          requires:
+             - smoke-test
+      - cleanup:
+          requires:
+            - cloudfront-update
