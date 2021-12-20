@@ -45,6 +45,7 @@ commands:
             aws cloudformation delete-stack --stack-name udapeople-backend-<<parameters.workflow_id>>
             aws cloudformation delete-stack --stack-name udapeople-frontend-<<parameters.workflow_id>>
             aws s3 rb s3://udapeople-<< parameters.workflow_id >> --force
+
   revert_migrations:
     description: Revert the last migration if successfully run in the current workflow.
     parameters:
@@ -55,7 +56,7 @@ commands:
           name: Revert migrations
           when: on_fail
           command: |
-            status= cat migrationstatus.txt
+            status=$(curl -H "token: 7e6f4440-e8d4-41b2-9300-1ff02cdabhgt" --request GET https://api.memstash.io/values/migration_status__<<parameters.workflow_id>>)
               echo $status
               if [[ "$status" == "db_success" ]]
               then
@@ -63,7 +64,7 @@ commands:
                 npm install
                 npm run migrations:revert
               fi
-#            status=$(curl -H "token: 7e6f4440-e8d4-41b2-9300-1ff02cdabhgt" --request GET https://api.memstash.io/values/migration_status__<<parameters.workflow_id>>)
+
 jobs:
   build-frontend:
     docker:
@@ -140,6 +141,7 @@ jobs:
              cd frontend
              npm install
              npm audit fix --audit-level=critical --force
+
   scan-backend:
     docker:
       - image: circleci/node:13.8.0
@@ -152,6 +154,7 @@ jobs:
           command: |
              cd backend
              npm audit fix --audit-level=critical --force
+
   deploy-infrastructure:
     docker:
       - image: amazon/aws-cli
@@ -171,15 +174,12 @@ jobs:
               --tags project=udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}
       - run:
           name: Save backend URL in memstash
-          working_directory: ./backend
           command: |
             BACKEND_IP=$(aws ec2 describe-instances \
               --query 'Reservations[*].Instances[*].PublicIpAddress' \
               --filters "Name=tag:project,Values=udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}" \
               --output text)
-            echo "http://$BACKEND_IP:3030" >> backendip.txt
-#            curl -H "Content-Type: text/plain" -H "token: 7e6f4440-e8d4-41b2-9300-1ff02cd7gbhg" --request PUT --data "http://$BACKEND_IP:3030" https://api.memstash.io/values/BACKEND_URL
-            
+            curl -H "Content-Type: text/plain" -H "token: 7e6f4440-e8d4-41b2-9300-1ff02cd7gbhg" --request PUT --data "http://$BACKEND_IP:3030" https://api.memstash.io/values/BACKEND_URL
       - run:
           name: Deploy frontend infrastructure
           working_directory: ./.circleci/files
@@ -202,7 +202,6 @@ jobs:
           root: .
           paths:
             - .circleci/ansible/inventory.txt
-            - ./backend/backendip.txt
       - destroy_environment:
           workflow_id: "${CIRCLE_WORKFLOW_ID:0:7}"
 
@@ -240,8 +239,6 @@ jobs:
       - image: circleci/node:13.8.0
     steps:
       - checkout
-      - attach_workspace:
-          at: .
       - run:
           name: install aws-cli
           command: |
@@ -273,19 +270,12 @@ jobs:
             if grep -q 'has been executed successfully' migration_output.txt
             then
               echo "DB migration was successful"
-              echo "db_success" > migrationstatus.txt
+              curl -H "Content-Type: text/plain" -H "token: 7e6f4440-e8d4-41b2-9300-1ff02cdabhgt" --request PUT --data "db_success" https://api.memstash.io/values/migration_status_${CIRCLE_WORKFLOW_ID:0:7}
             else
               echo "DB migration failed, looks like already exists...moving on."
-              echo "db_failure" > migrationstatus.txt              
+              curl -H "Content-Type: text/plain" -H "token: 7e6f4440-e8d4-41b2-9300-1ff02cdabhgt" --request PUT --data "db_failure" https://api.memstash.io/values/migration_status_${CIRCLE_WORKFLOW_ID:0:7}
             fi
             echo "WorkflowID=${CIRCLE_WORKFLOW_ID:0:7}" 
-#            curl -H "Content-Type: text/plain" -H "token: 7e6f4440-e8d4-41b2-9300-1ff02cdabhgt" --request PUT --data "db_success" https://api.memstash.io/values/migration_status_${CIRCLE_WORKFLOW_ID:0:7}
-#            curl -H "Content-Type: text/plain" -H "token: 7e6f4440-e8d4-41b2-9300-1ff02cdabhgt" --request PUT --data "db_failure" https://api.memstash.io/values/migration_status_${CIRCLE_WORKFLOW_ID:0:7}
-      - persist_to_workspace:
-          root: .
-          paths:
-            - .circleci/ansible/inventory.txt
-            - ./backend/migrationstatus.txt
       - destroy_environment:
           workflow_id: "${CIRCLE_WORKFLOW_ID:0:7}"
       - revert_migrations:
@@ -383,7 +373,7 @@ jobs:
           name: Backend smoke test.
           working_directory: ./backend
           command: |
-            BACKEND_URL= cat backendip.txt
+            export BACKEND_URL=$(curl -H "token: 7e6f4440-e8d4-41b2-9300-1ff02cd7gbhg" --request GET https://api.memstash.io/values/BACKEND_URL)
             curl "$BACKEND_URL/api/status"
             if curl "$BACKEND_URL/api/status" | grep "ok"
             then
@@ -391,7 +381,6 @@ jobs:
             else
               return 1
             fi
-#            export BACKEND_URL=$(curl -H "token: 7e6f4440-e8d4-41b2-9300-1ff02cd7gbhg" --request GET https://api.memstash.io/values/BACKEND_URL)
       - run:
           name: Frontend smoke test.
           working_directory: ./backend
@@ -429,8 +418,7 @@ jobs:
             WorkflowID=$(aws cloudformation \
               list-exports --query "Exports[?Name==\`WorkflowID\`].Value" \
               --no-paginate --output text)
-            echo $WorkflowID > wkID.txt
-#            curl -H "Content-Type: text/plain" -H "token: 7e6f4440-e8d4-41b2-9300-1ff02cdhjikj" --request PUT --data "$WorkflowID" https://api.memstash.io/values/WorkflowID
+            curl -H "Content-Type: text/plain" -H "token: 7e6f4440-e8d4-41b2-9300-1ff02cdhjikj" --request PUT --data "$WorkflowID" https://api.memstash.io/values/WorkflowID
       - run:
           name: Update cloudfront distribution
           working_directory: ./.circleci/files
@@ -440,10 +428,6 @@ jobs:
               --stack-name udapeople-cloudfront-production \
               --parameter-overrides WorkflowID="${CIRCLE_WORKFLOW_ID:0:7}" \
               --tags project=udapeople
-      - persist_to_workspace:
-          root: .
-          paths:
-            - .circleci/files/wkID.txt
       - destroy_environment:
           workflow_id: "${CIRCLE_WORKFLOW_ID:0:7}"
       - revert_migrations:
@@ -454,13 +438,10 @@ jobs:
       - image: amazon/aws-cli
     steps:
       - checkout
-      - attach_workspace:
-          at: .
       - run:
           name: Clean up old environment
-          working_directory: ./.circleci/files
-          command: |            
-            OldWorkflowID = cat wkID.txt
+          command: |
+            OldWorkflowID=$(curl -H "token: 7e6f4440-e8d4-41b2-9300-1ff02cdhjikj" --request GET https://api.memstash.io/values/WorkflowID)
             CurrentWorkflowID1=${CIRCLE_WORKFLOW_ID:0:7}
             if [[ "$CurrentWorkflowID" != "$OldWorkflowID" ]]
             then
@@ -470,7 +451,6 @@ jobs:
             else
               echo "$OldWorkflowID==$CurrentWorkflowID => nothing needs to be done..."
             fi
-#            OldWorkflowID=$(curl -H "token: 7e6f4440-e8d4-41b2-9300-1ff02cdhjikj" --request GET https://api.memstash.io/values/WorkflowID)
           environment:
             TERM: xterm-256color
 
@@ -523,3 +503,4 @@ workflows:
       - cleanup:
           requires:
             - cloudfront-update
+=
